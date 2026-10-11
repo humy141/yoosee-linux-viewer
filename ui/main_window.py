@@ -1,6 +1,3 @@
-import cv2
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -15,12 +12,16 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QFrame,
 )
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QImage, QPixmap
+import cv2
 
 from app.camera_manager import CameraStore, CameraStreamThread
 from app.motion_detector import MotionDetector
 from app.recorder import Recorder
 from ui.camera_dialog import AddCameraDialog
 from ui.discovery_dialog import CameraDiscoveryDialog
+from ui.ptz_dialog import PTZDialog
 
 
 class MainWindow(QMainWindow):
@@ -51,7 +52,6 @@ class MainWindow(QMainWindow):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
 
         self.camera_list = QListWidget()
         self.camera_list.setStyleSheet("font-size: 12px;")
@@ -59,23 +59,24 @@ class MainWindow(QMainWindow):
 
         add_btn = QPushButton("Thêm camera thủ công")
         add_btn.clicked.connect(self.add_camera)
-        
         discovery_btn = QPushButton("Quét tìm camera tự động")
         discovery_btn.clicked.connect(self.discover_cameras)
         discovery_btn.setStyleSheet("background-color: #0d6efd; color: white; font-weight: bold;")
+
+        self.ptz_btn = QPushButton("Điều khiển PTZ")
+        self.ptz_btn.clicked.connect(self.open_ptz)
 
         left_layout.addWidget(QLabel("Danh sách camera"))
         left_layout.addWidget(self.camera_list)
         left_layout.addWidget(discovery_btn)
         left_layout.addWidget(add_btn)
+        left_layout.addWidget(self.ptz_btn)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
 
         top_menu = QHBoxLayout()
-        menu_items = ["Trang chủ", "Camera", "Video", "Cảnh báo", "Cài đặt"]
-        for item in menu_items:
+        for item in ["Trang chủ", "Camera", "Video", "Cảnh báo", "Cài đặt"]:
             btn = QPushButton(item)
             btn.setFixedHeight(36)
             top_menu.addWidget(btn)
@@ -87,12 +88,9 @@ class MainWindow(QMainWindow):
 
         self.preview_label = QLabel("Xem trực tiếp")
         self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setFixedHeight(530)
-        self.preview_label.setStyleSheet(
-            "background: black; color: white; border: 1px solid #333; font-size: 18px;"
-        )
+        self.preview_label.setFixedHeight(520)
+        self.preview_label.setStyleSheet("background: black; color: white; border: 1px solid #333; font-size: 18px;")
         preview_layout.addWidget(self.preview_label)
-
         right_layout.addWidget(preview_frame)
 
         toolbar = QHBoxLayout()
@@ -114,7 +112,6 @@ class MainWindow(QMainWindow):
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setPlaceholderText("Nhật ký sự kiện...")
-        self.log_box.setStyleSheet("font-size: 12px;")
         right_layout.addWidget(self.log_box)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -152,18 +149,14 @@ class MainWindow(QMainWindow):
             self.load_cameras()
 
     def discover_cameras(self):
-        """Mở dialog để phát hiện camera tự động"""
         dialog = CameraDiscoveryDialog(self)
         dialog.camera_selected.connect(self.on_camera_discovered)
         dialog.exec_()
 
     def on_camera_discovered(self, camera):
-        """Xử lý camera được phát hiện"""
-        # Lưu camera
         existing = self.camera_store.list_cameras()
         camera["id"] = len(existing) + 1
         camera["name"] = f"Camera {camera['ip']}"
-        
         self.camera_store.add_camera(
             camera["name"],
             camera["ip"],
@@ -171,13 +164,32 @@ class MainWindow(QMainWindow):
             camera["username"],
             camera["password"],
         )
-        
         self.log_event(f"✓ Thêm camera phát hiện: {camera['name']} ({camera['ip']})")
         self.load_cameras()
 
     def on_camera_selected(self, item):
         self.current_camera = item.data(Qt.UserRole)
         self.status_label.setText(f"Đã chọn: {self.current_camera['name']}")
+
+    def open_ptz(self):
+        if self.current_camera is None:
+            QMessageBox.warning(self, "Lỗi", "Vui lòng chọn camera trước.")
+            return
+        dialog = PTZDialog(self)
+        dialog.up_btn.clicked.connect(lambda: self.send_ptz_command("up"))
+        dialog.down_btn.clicked.connect(lambda: self.send_ptz_command("down"))
+        dialog.left_btn.clicked.connect(lambda: self.send_ptz_command("left"))
+        dialog.right_btn.clicked.connect(lambda: self.send_ptz_command("right"))
+        dialog.center_btn.clicked.connect(lambda: self.send_ptz_command("home"))
+        dialog.zoom_in_btn.clicked.connect(lambda: self.send_ptz_command("zoom_in"))
+        dialog.zoom_out_btn.clicked.connect(lambda: self.send_ptz_command("zoom_out"))
+        dialog.exec_()
+
+    def send_ptz_command(self, command):
+        if self.current_camera is None:
+            return
+        self.log_event(f"[PTZ] Gửi lệnh: {command} tới {self.current_camera['name']}")
+        self.status_label.setText(f"PTZ: {command}")
 
     def toggle_stream(self):
         if self.current_camera is None:
