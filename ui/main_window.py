@@ -1,3 +1,4 @@
+import cv2
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
 
         self.camera_list = QListWidget()
+        self.camera_list.setStyleSheet("font-size: 12px;")
         self.camera_list.itemClicked.connect(self.on_camera_selected)
         left_layout.addWidget(self.camera_list)
 
@@ -56,18 +58,18 @@ class MainWindow(QMainWindow):
         right = QWidget()
         right_layout = QVBoxLayout(right)
 
-        self.preview_label = QLabel("Camera preview")
+        self.preview_label = QLabel("Xem trực tiếp")
         self.preview_label.setFixedHeight(500)
-        self.preview_label.setStyleSheet("background: black; color: white; border: 1px solid #222;")
+        self.preview_label.setStyleSheet("background: black; color: white; border: 1px solid #222; font-size: 16px;")
         self.preview_label.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(self.preview_label)
 
         toolbar = QHBoxLayout()
-        self.start_btn = QPushButton("Start")
+        self.start_btn = QPushButton("Bắt đầu")
         self.start_btn.clicked.connect(self.toggle_stream)
         self.record_btn = QPushButton("Ghi video")
         self.record_btn.clicked.connect(self.toggle_recording)
-        self.motion_btn = QPushButton("Motion ON")
+        self.motion_btn = QPushButton("Phát hiện chuyển động: BẬT")
         self.motion_btn.clicked.connect(self.toggle_motion)
         toolbar.addWidget(self.start_btn)
         toolbar.addWidget(self.record_btn)
@@ -79,6 +81,7 @@ class MainWindow(QMainWindow):
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
+        self.log_box.setPlaceholderText("Nhật ký sự kiện...")
         right_layout.addWidget(self.log_box)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -122,7 +125,7 @@ class MainWindow(QMainWindow):
         if self.stream_thread is not None and self.stream_thread.isRunning():
             self.stream_thread.stop()
             self.stream_thread = None
-            self.status_label.setText("Stream đã dừng")
+            self.status_label.setText("Luồng xem đã dừng")
             return
 
         rtsp_url = self.camera_store.build_rtsp_url(self.current_camera)
@@ -130,7 +133,7 @@ class MainWindow(QMainWindow):
         self.stream_thread.frame_ready.connect(self.on_frame_ready)
         self.stream_thread.error.connect(self.on_stream_error)
         self.stream_thread.start()
-        self.status_label.setText(f"Đang phát: {self.current_camera['name']}")
+        self.status_label.setText(f"Đang xem: {self.current_camera['name']}")
 
     def on_stream_error(self, message):
         self.status_label.setText(message)
@@ -141,9 +144,9 @@ class MainWindow(QMainWindow):
             return
 
         if self.motion_enabled and self.current_camera is not None:
-            motion, contours, _ = self.motion_detector.detect(frame)
+            motion, _, _ = self.motion_detector.detect(frame)
             if motion:
-                self.status_label.setText("Phát hiện chuyển động")
+                self.status_label.setText("Đã phát hiện chuyển động")
                 self.log_box.append(f"[{self.current_camera['name']}] Phát hiện chuyển động")
 
         if self.recording:
@@ -172,5 +175,6 @@ class MainWindow(QMainWindow):
 
     def toggle_motion(self):
         self.motion_enabled = not self.motion_enabled
-        self.motion_btn.setText("Motion ON" if self.motion_enabled else "Motion OFF")
-        self.log_box.append(f"Motion detection: {'ON' if self.motion_enabled else 'OFF'}")
+        status = "BẬT" if self.motion_enabled else "TẮT"
+        self.motion_btn.setText(f"Phát hiện chuyển động: {status}")
+        self.log_box.append(f"Phát hiện chuyển động: {'BẬT' if self.motion_enabled else 'TẮT'}")

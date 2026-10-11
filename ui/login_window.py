@@ -37,4 +37,4 @@ class LoginWindow(QMainWindow):
             self.main = MainWindow(username)
             self.main.show()
         else:
-            QMessageBox.warning(self, "Lỗi", "Vui lòng nhập thông tin đăng nhập.")
+            QMessageBox.warning(self, "Lỗi", "Vui lòng nhập tài khoản và mật khẩu.")

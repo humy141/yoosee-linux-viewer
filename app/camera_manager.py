@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import cv2
+from PyQt5.QtCore import QThread, pyqtSignal
+
 from app.config import CAMERA_FILE, ensure_config
 
 
