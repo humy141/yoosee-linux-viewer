@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QSplitter,
+    QFrame,
 )
 
 from app.camera_manager import CameraStore, CameraStreamThread
@@ -32,37 +33,61 @@ class MainWindow(QMainWindow):
         self.stream_thread = None
         self.recording = False
         self.motion_enabled = True
+        self.events = []
         self.init_ui()
         self.load_cameras()
+        self.log_event("Hệ thống sẵn sàng")
 
     def init_ui(self):
         self.setWindowTitle(f"Yoosee Linux - {self.username}")
-        self.resize(1200, 800)
+        self.resize(1300, 850)
 
         root = QWidget(self)
         self.setCentralWidget(root)
-        layout = QHBoxLayout(root)
+        root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(8, 8, 8, 8)
+        root_layout.setSpacing(8)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
 
         self.camera_list = QListWidget()
         self.camera_list.setStyleSheet("font-size: 12px;")
         self.camera_list.itemClicked.connect(self.on_camera_selected)
-        left_layout.addWidget(self.camera_list)
 
         add_btn = QPushButton("Thêm camera")
         add_btn.clicked.connect(self.add_camera)
+
+        left_layout.addWidget(QLabel("Danh sách camera"))
+        left_layout.addWidget(self.camera_list)
         left_layout.addWidget(add_btn)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        top_menu = QHBoxLayout()
+        menu_items = ["Trang chủ", "Camera", "Video", "Cảnh báo", "Cài đặt"]
+        for item in menu_items:
+            btn = QPushButton(item)
+            btn.setFixedHeight(36)
+            top_menu.addWidget(btn)
+        right_layout.addLayout(top_menu)
+
+        preview_frame = QFrame()
+        preview_frame.setFrameShape(QFrame.StyledPanel)
+        preview_layout = QVBoxLayout(preview_frame)
 
         self.preview_label = QLabel("Xem trực tiếp")
-        self.preview_label.setFixedHeight(500)
-        self.preview_label.setStyleSheet("background: black; color: white; border: 1px solid #222; font-size: 16px;")
         self.preview_label.setAlignment(Qt.AlignCenter)
-        right_layout.addWidget(self.preview_label)
+        self.preview_label.setFixedHeight(530)
+        self.preview_label.setStyleSheet(
+            "background: black; color: white; border: 1px solid #333; font-size: 18px;"
+        )
+        preview_layout.addWidget(self.preview_label)
+
+        right_layout.addWidget(preview_frame)
 
         toolbar = QHBoxLayout()
         self.start_btn = QPushButton("Bắt đầu")
@@ -77,17 +102,23 @@ class MainWindow(QMainWindow):
         right_layout.addLayout(toolbar)
 
         self.status_label = QLabel("Sẵn sàng")
+        self.status_label.setStyleSheet("font-weight: bold; color: #0d6efd;")
         right_layout.addWidget(self.status_label)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setPlaceholderText("Nhật ký sự kiện...")
+        self.log_box.setStyleSheet("font-size: 12px;")
         right_layout.addWidget(self.log_box)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(right)
-        layout.addWidget(splitter)
+        root_layout.addWidget(splitter)
+
+    def log_event(self, message):
+        self.events.append(message)
+        self.log_box.append(message)
 
     def load_cameras(self):
         cameras = self.camera_store.list_cameras()
@@ -111,7 +142,7 @@ class MainWindow(QMainWindow):
                 values["username"],
                 values["password"],
             )
-            self.log_box.append(f"Đã thêm camera: {camera['name']} ({camera['ip']})")
+            self.log_event(f"Đã thêm camera: {camera['name']} ({camera['ip']})")
             self.load_cameras()
 
     def on_camera_selected(self, item):
@@ -126,6 +157,7 @@ class MainWindow(QMainWindow):
             self.stream_thread.stop()
             self.stream_thread = None
             self.status_label.setText("Luồng xem đã dừng")
+            self.log_event(f"Đã dừng xem {self.current_camera['name']}")
             return
 
         rtsp_url = self.camera_store.build_rtsp_url(self.current_camera)
@@ -134,10 +166,11 @@ class MainWindow(QMainWindow):
         self.stream_thread.error.connect(self.on_stream_error)
         self.stream_thread.start()
         self.status_label.setText(f"Đang xem: {self.current_camera['name']}")
+        self.log_event(f"Bắt đầu xem {self.current_camera['name']}")
 
     def on_stream_error(self, message):
         self.status_label.setText(message)
-        self.log_box.append(message)
+        self.log_event(message)
 
     def on_frame_ready(self, frame):
         if frame is None:
@@ -147,7 +180,7 @@ class MainWindow(QMainWindow):
             motion, _, _ = self.motion_detector.detect(frame)
             if motion:
                 self.status_label.setText("Đã phát hiện chuyển động")
-                self.log_box.append(f"[{self.current_camera['name']}] Phát hiện chuyển động")
+                self.log_event(f"[{self.current_camera['name']}] Phát hiện chuyển động")
 
         if self.recording:
             if self.recorder.writer is None:
@@ -167,14 +200,17 @@ class MainWindow(QMainWindow):
         self.recording = not self.recording
         if self.recording:
             self.record_btn.setText("Dừng ghi")
-            self.log_box.append(f"Bắt đầu ghi hình: {self.current_camera['name']}")
+            self.log_event(f"Bắt đầu ghi hình: {self.current_camera['name']}")
         else:
             self.record_btn.setText("Ghi video")
             self.recorder.stop()
-            self.log_box.append(f"Dừng ghi hình: {self.current_camera['name']}")
+            self.log_event(f"Dừng ghi hình: {self.current_camera['name']}")
 
     def toggle_motion(self):
         self.motion_enabled = not self.motion_enabled
         status = "BẬT" if self.motion_enabled else "TẮT"
         self.motion_btn.setText(f"Phát hiện chuyển động: {status}")
-        self.log_box.append(f"Phát hiện chuyển động: {'BẬT' if self.motion_enabled else 'TẮT'}")
+        self.log_event(f"Phát hiện chuyển động: {status}")
+
+
+__all__ = ["MainWindow"]

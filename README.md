@@ -1,25 +1,25 @@
 # Yoosee Linux Viewer
 
-Dự án phần mềm giám sát camera trên Linux, tương tự Yoosee/Android app, phục vụ camera IP FNKVision SEA-U2 và các camera RTSP/ONVIF tương thích.
+Ứng dụng giám sát camera trên Linux, tương tự Yoosee, nhằm hỗ trợ camera IP FNKVision SEA-U2 và các camera RTSP/ONVIF tương thích.
 
-## Tính năng
+## Tính năng chính
 
-- Xem camera live qua RTSP
+- Xem video trực tiếp từ camera
 - Quản lý nhiều camera
-- Lưu video ghi hình theo thời gian thực
-- Phát hiện chuyển động cơ bản
-- Màn hình log cảnh báo và sự kiện
-- Giao diện PyQt5 trên Linux
-- Lưu dữ liệu camera trong SQLite/JSON
+- Ghi video tự động
+- Phát hiện chuyển động
+- Hiển thị nhật ký sự kiện bằng tiếng Việt
+- Giao diện PyQt5 thân thiện với Linux
+- Lưu thông tin camera trên máy cục bộ
 
-## Công nghệ
+## Môi trường phát triển
 
 - Python 3.10+
 - PyQt5
 - OpenCV
-- SQLite
+- NumPy
 
-## Cài đặt
+## Cài đặt nhanh
 
 ```bash
 python3 -m venv .venv
@@ -28,20 +28,21 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Sử dụng
+## Hướng dẫn sử dụng
 
-1. Mở app.
-2. Đăng nhập với bất kỳ tài khoản nào (mẫu demo).
-3. Thêm camera theo IP / username / password.
-4. Chọn camera và nhấn Start.
-5. Bật Record và Motion Detection nếu cần.
+1. Mở ứng dụng.
+2. Đăng nhập với tài khoản demo `admin` / `admin`.
+3. Chọn "Thêm camera".
+4. Nhập IP, port, username, password của camera.
+5. Chọn camera rồi nhấn "Bắt đầu".
+6. Có thể bật "Ghi video" và "Phát hiện chuyển động".
 
 ## Lưu ý
 
-- Đây là phiên bản demo / production-ready skeleton, giúp bạn bắt đầu nhanh trên Linux.
-- Với camera FNKVision SEA-U2, bạn cần dùng RTSP URL đúng cấu trúc từ camera.
-- Ví dụ mẫu: `rtsp://admin:password@192.168.1.10:554/stream1`
+- Đây là phiên bản demo / nền tảng chạy trên Linux.
+- Đối với camera FNKVision SEA-U2, cần kiểm tra đúng RTSP URL nhằm truy cập stream.
+- Ví dụ: `rtsp://admin:password@192.168.1.10:554/stream1`
 
-## License
+## Giấy phép
 
 MIT
