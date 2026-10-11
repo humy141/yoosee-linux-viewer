@@ -20,6 +20,7 @@ from app.camera_manager import CameraStore, CameraStreamThread
 from app.motion_detector import MotionDetector
 from app.recorder import Recorder
 from ui.camera_dialog import AddCameraDialog
+from ui.discovery_dialog import CameraDiscoveryDialog
 
 
 class MainWindow(QMainWindow):
@@ -56,11 +57,16 @@ class MainWindow(QMainWindow):
         self.camera_list.setStyleSheet("font-size: 12px;")
         self.camera_list.itemClicked.connect(self.on_camera_selected)
 
-        add_btn = QPushButton("Thêm camera")
+        add_btn = QPushButton("Thêm camera thủ công")
         add_btn.clicked.connect(self.add_camera)
+        
+        discovery_btn = QPushButton("Quét tìm camera tự động")
+        discovery_btn.clicked.connect(self.discover_cameras)
+        discovery_btn.setStyleSheet("background-color: #0d6efd; color: white; font-weight: bold;")
 
         left_layout.addWidget(QLabel("Danh sách camera"))
         left_layout.addWidget(self.camera_list)
+        left_layout.addWidget(discovery_btn)
         left_layout.addWidget(add_btn)
 
         right = QWidget()
@@ -144,6 +150,30 @@ class MainWindow(QMainWindow):
             )
             self.log_event(f"Đã thêm camera: {camera['name']} ({camera['ip']})")
             self.load_cameras()
+
+    def discover_cameras(self):
+        """Mở dialog để phát hiện camera tự động"""
+        dialog = CameraDiscoveryDialog(self)
+        dialog.camera_selected.connect(self.on_camera_discovered)
+        dialog.exec_()
+
+    def on_camera_discovered(self, camera):
+        """Xử lý camera được phát hiện"""
+        # Lưu camera
+        existing = self.camera_store.list_cameras()
+        camera["id"] = len(existing) + 1
+        camera["name"] = f"Camera {camera['ip']}"
+        
+        self.camera_store.add_camera(
+            camera["name"],
+            camera["ip"],
+            str(camera["port"]),
+            camera["username"],
+            camera["password"],
+        )
+        
+        self.log_event(f"✓ Thêm camera phát hiện: {camera['name']} ({camera['ip']})")
+        self.load_cameras()
 
     def on_camera_selected(self, item):
         self.current_camera = item.data(Qt.UserRole)
