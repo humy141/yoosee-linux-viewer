@@ -1,178 +1,135 @@
-from PyQt5.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QLineEdit,
-    QFormLayout,
-    QComboBox,
-)
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QProgressBar
 from PyQt5.QtCore import Qt, pyqtSignal, QThread
-from app.camera_discovery import AsyncCameraDiscovery, CameraDiscovery
+from app.link_discovery import CameraLinkDiscovery
 
 
 class DiscoveryThread(QThread):
-    log = pyqtSignal(str)
-    finished = pyqtSignal(list)
+    """Thread dò tìm camera không block UI."""
 
-    def __init__(self, username="admin", password="admin"):
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+
+    def __init__(self, ip, username, password):
         super().__init__()
+        self.ip = ip
         self.username = username
         self.password = password
-        self.discovery = None
 
     def run(self):
-        self.discovery = AsyncCameraDiscovery(
-            self.username,
-            self.password,
-            self.log.emit
-        )
-        self.discovery.start()
-        self.discovery.join()
-        self.finished.emit(self.discovery.result)
+        self.progress.emit(f"🔍 Dò tìm camera {self.ip}...")
+        discovery = CameraLinkDiscovery(self.ip, self.username, self.password)
+        results = discovery.discover_all()
+        self.progress.emit(f"✓ Hoàn tất dò tìm")
+        self.finished.emit(results)
 
 
 class CameraDiscoveryDialog(QDialog):
-    """Dialog để phát hiện camera tự động, tối ưu cho FNKVision SEA-U2"""
-    
+    """Dialog dò tìm camera và chọn RTSP stream."""
+
     camera_selected = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Tìm kiếm camera tự động (FNKVision SEA-U2)")
-        self.resize(600, 550)
-        self.discovered_cameras = []
+        self.setWindowTitle("Dò tìm camera")
+        self.resize(500, 400)
+        self.discovery_results = None
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
 
-        # Tiêu đề
-        title = QLabel("Quét mạng để tìm camera FNKVision SEA-U2")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(title)
+        # Input fields
+        ip_layout = QHBoxLayout()
+        ip_layout.addWidget(QLabel("IP Camera:"))
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("192.168.1.4")
+        ip_layout.addWidget(self.ip_input)
+        layout.addLayout(ip_layout)
 
-        # Cấu hình
-        config_layout = QFormLayout()
-        
-        # Preset credentials cho FNKVision
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItem("admin / admin", ("admin", "admin"))
-        self.preset_combo.addItem("admin / 12345", ("admin", "12345"))
-        self.preset_combo.addItem("root / admin", ("root", "admin"))
-        self.preset_combo.addItem("Nhập tùy chỉnh", None)
-        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
-        config_layout.addRow("Credential FNKVision", self.preset_combo)
-        
-        self.username_input = QLineEdit("admin")
-        self.username_input.setEnabled(False)
-        config_layout.addRow("Username (tùy chỉnh)", self.username_input)
-        
-        self.password_input = QLineEdit("admin")
-        self.password_input.setEchoMode(QLineEdit.Password)
-        self.password_input.setEnabled(False)
-        config_layout.addRow("Mật khẩu (tùy chỉnh)", self.password_input)
-        
-        layout.addLayout(config_layout)
+        user_layout = QHBoxLayout()
+        user_layout.addWidget(QLabel("Username:"))
+        self.user_input = QLineEdit()
+        self.user_input.setText("admin")
+        user_layout.addWidget(self.user_input)
+        layout.addLayout(user_layout)
 
-        # Nút scan
-        scan_btn = QPushButton("🔍 Bắt đầu quét mạng")
-        scan_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 8px;")
+        pass_layout = QHBoxLayout()
+        pass_layout.addWidget(QLabel("Password:"))
+        self.pass_input = QLineEdit()
+        self.pass_input.setText("admin")
+        self.pass_input.setEchoMode(QLineEdit.Password)
+        pass_layout.addWidget(self.pass_input)
+        layout.addLayout(pass_layout)
+
+        # Scan button
+        scan_btn = QPushButton("🔍 Dò tìm camera")
         scan_btn.clicked.connect(self.start_discovery)
         layout.addWidget(scan_btn)
 
-        # Log
-        layout.addWidget(QLabel("Quá trình quét:"))
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setStyleSheet("font-size: 11px; font-family: monospace;")
-        self.log_box.setPlaceholderText("Nhấn 'Bắt đầu quét mạng' để tìm camera...")
-        layout.addWidget(self.log_box)
+        # Progress
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
 
-        # Danh sách camera được phát hiện
-        layout.addWidget(QLabel("Camera được phát hiện:"))
-        self.camera_list = QListWidget()
-        self.camera_list.itemClicked.connect(self.on_camera_selected)
-        layout.addWidget(self.camera_list)
+        # Status
+        self.status_label = QLabel("Sẵn sàng")
+        layout.addWidget(self.status_label)
 
-        # Nút hành động
+        # Buttons
         btn_layout = QHBoxLayout()
-        select_btn = QPushButton("✓ Chọn camera")
-        select_btn.setStyleSheet("background-color: #0d6efd; color: white;")
-        select_btn.clicked.connect(self.select_camera)
-        cancel_btn = QPushButton("✕ Hủy")
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Hủy")
         cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(select_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
-    def on_preset_changed(self, index):
-        data = self.preset_combo.currentData()
-        if data is None:
-            self.username_input.setEnabled(True)
-            self.password_input.setEnabled(True)
-        else:
-            self.username_input.setText(data[0])
-            self.password_input.setText(data[1])
-            self.username_input.setEnabled(False)
-            self.password_input.setEnabled(False)
-
     def start_discovery(self):
-        username = self.username_input.text().strip() or "admin"
-        password = self.password_input.text().strip() or "admin"
-        
-        self.log_box.clear()
-        self.log_box.append("═" * 60)
-        self.log_box.append("🔍 BẮT ĐẦU QUÉT MẠNG TÌM CAMERA FNKVISION SEA-U2")
-        self.log_box.append("═" * 60)
-        self.log_box.append(f"Username: {username}")
-        self.log_box.append(f"Thời gian quét: ~2-3 phút (tùy kích thước mạng)")
-        self.log_box.append("─" * 60)
-        
-        self.discovery_thread = DiscoveryThread(username, password)
-        self.discovery_thread.log.connect(self.on_log)
-        self.discovery_thread.finished.connect(self.on_discovery_finished)
-        self.discovery_thread.start()
+        ip = self.ip_input.text().strip()
+        username = self.user_input.text().strip()
+        password = self.pass_input.text().strip()
 
-    def on_log(self, message):
-        self.log_box.append(message)
-        # Tự động scroll xuống
-        scrollbar = self.log_box.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        if not ip:
+            QMessageBox.warning(self, "Lỗi", "Vui lòng nhập IP camera")
+            return
 
-    def on_discovery_finished(self, cameras):
-        self.discovered_cameras = cameras
-        self.camera_list.clear()
-        
-        self.log_box.append("═" * 60)
-        if cameras:
-            self.log_box.append(f"✓ TÌM THẤY {len(cameras)} CAMERA")
-            self.log_box.append("═" * 60)
-            for idx, cam in enumerate(cameras, 1):
-                self.log_box.append(f"{idx}. {cam['name']} ({cam['ip']}:{cam['port']})")
-                self.log_box.append(f"   - Type: {cam['type']}")
-                self.log_box.append(f"   - URL: {cam['rtsp_url']}")
-                item_text = f"{cam['name']} - {cam['ip']}:{cam['port']} ({cam['type']})"
-                item = QListWidgetItem(item_text)
-                item.setData(Qt.UserRole, cam)
-                self.camera_list.addItem(item)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)
+        self.status_label.setText("Đang dò tìm...")
+
+        self.thread = DiscoveryThread(ip, username, password)
+        self.thread.progress.connect(self.on_progress)
+        self.thread.finished.connect(self.on_finished)
+        self.thread.start()
+
+    def on_progress(self, message):
+        self.status_label.setText(message)
+
+    def on_finished(self, results):
+        self.discovery_results = results
+        self.progress_bar.setVisible(False)
+
+        rtsp_streams = results.get("rtsp_streams", [])
+        if rtsp_streams:
+            self.status_label.setText(
+                f"✓ Tìm thấy {len(rtsp_streams)} RTSP stream. Nhấn OK để chọn."
+            )
+            # Emit camera info
+            camera_info = {
+                "ip": results["camera_ip"],
+                "name": f"Camera {results['camera_ip']}",
+                "username": results["username"],
+                "port": 554,
+                "rtsp_url": rtsp_streams[0]["url"],
+            }
+            self.camera_selected.emit(camera_info)
         else:
-            self.log_box.append("✗ KHÔNG TÌM THẤY CAMERA NÀO")
-            self.log_box.append("═" * 60)
-            self.log_box.append("\nGợi ý:")
-            self.log_box.append("1. Kiểm tra camera và máy Linux có cùng mạng không")
-            self.log_box.append("2. Thử đổi credential (password mặc định có thể khác)")
-            self.log_box.append("3. Kiểm tra camera có bật RTSP stream không")
-            self.log_box.append("4. Nếu vẫn không tìm thấy, thêm camera thủ công")
+            self.status_label.setText("✗ Không tìm thấy stream. Kiểm tra IP, user, password.")
+            QMessageBox.warning(
+                self, "Lỗi", "Không tìm thấy stream RTSP trên camera này."
+            )
 
-    def on_camera_selected(self, item):
-        self.current_camera = item.data(Qt.UserRole)
 
-    def select_camera(self):
-        if hasattr(self, 'current_camera'):
-            self.camera_selected.emit(self.current_camera)
-            self.accept()
+__all__ = ["CameraDiscoveryDialog"]
