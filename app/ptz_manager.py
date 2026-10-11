@@ -4,13 +4,25 @@ import xml.etree.ElementTree as ET
 
 
 class ONVIFPTZManager:
-    """Generic ONVIF PTZ controller for cameras that expose PTZ service via ONVIF."""
+    """Basic ONVIF PTZ controller for cameras exposing the PTZ service."""
 
     DEVICE_SERVICE_CANDIDATES = [
         "/onvif/device_service",
-        "/onvif/device_service?wsdl",
-        "/onvif/device_service",
         "/onvif/DeviceService",
+        "/onvif/device_service?wsdl",
+        "/onvif/device",
+    ]
+
+    MEDIA_SERVICE_CANDIDATES = [
+        "/onvif/media_service",
+        "/onvif/MediaService",
+        "/onvif/media",
+    ]
+
+    PTZ_SERVICE_CANDIDATES = [
+        "/onvif/ptz_service",
+        "/onvif/PTZService",
+        "/onvif/ptz",
     ]
 
     def __init__(self, camera_ip, username="admin", password="admin", port=80):
@@ -21,10 +33,22 @@ class ONVIFPTZManager:
         self.base_url = f"http://{camera_ip}:{self.port}"
         self.device_url = None
         self.ptz_url = None
+        self.profile_token = None
 
-    def _request(self, url, body, action, content_type="application/soap+xml; charset=utf-8"):
+    def _get(self, url, timeout=8):
+        try:
+            return requests.get(
+                url,
+                auth=HTTPBasicAuth(self.username, self.password),
+                timeout=timeout,
+                verify=False,
+            )
+        except Exception:
+            return None
+
+    def _post_soap(self, url, body, action):
         headers = {
-            "Content-Type": content_type,
+            "Content-Type": "application/soap+xml; charset=utf-8",
             "SOAPAction": action,
         }
         resp = requests.post(
@@ -32,109 +56,111 @@ class ONVIFPTZManager:
             data=body,
             headers=headers,
             auth=HTTPBasicAuth(self.username, self.password),
-            timeout=10,
+            timeout=8,
+            verify=False,
         )
-        resp.raise_for_status()
-        return resp.text
+        return resp
 
-    def discover_device_service(self):
-        body = '''
-        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
-                       xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
-          <soap:Body>
-            <tds:GetCapabilities>
-              <tds:Category>All</tds:Category>
-            </tds:GetCapabilities>
-          </soap:Body>
-        </soap:Envelope>
-        '''
-        for path in self.DEVICE_SERVICE_CANDIDATES:
-            url = self.base_url + path
-            try:
-                output = self._request(url, body, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities")
-                self.device_url = url
-                if "XAddr" in output or "PTZ" in output:
-                    return url
-            except Exception:
-                continue
+    def _find_service_by_candidates(self, candidates):
+        for cand in candidates:
+            url = f"{self.base_url}{cand}"
+            r = self._get(url)
+            if r and r.status_code in (200, 401, 403, 405):
+                return url
         return None
 
+    def discover_device_service(self):
+        self.device_url = self._find_service_by_candidates(self.DEVICE_SERVICE_CANDIDATES)
+        return self.device_url
+
     def discover_ptz_service(self):
-        device_url = self.device_url or self.discover_device_service()
-        if not device_url:
-            raise RuntimeError("Không tìm thấy ONVIF Device Service trên camera.")
+        if self.ptz_url:
+            return self.ptz_url
 
-        body = '''
-        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
-                       xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
-          <soap:Body>
-            <tds:GetCapabilities>
-              <tds:Category>PTZ</tds:Category>
-            </tds:GetCapabilities>
-          </soap:Body>
-        </soap:Envelope>
-        '''
-        try:
-            output = self._request(device_url, body, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities")
-            root = ET.fromstring(output)
-            ns = {"soap": "http://www.w3.org/2003/05/soap-envelope", "tds": "http://www.onvif.org/ver10/device/wsdl", "tt": "http://www.onvif.org/ver10/schema"}
-            for elem in root.iter():
-                if elem.tag.endswith("PTZ") and elem.text and "http" in elem.text:
-                    self.ptz_url = elem.text
-                    return elem.text
-            for elem in root.iter():
-                if 'XAddr' in elem.tag:
-                    self.ptz_url = elem.text
-                    return elem.text
-        except Exception:
-            pass
-
-        # Fallback to common ONVIF PTZ URL patterns
-        fallback_urls = [
-            f"{self.base_url}/onvif/ptz_service",
-            f"{self.base_url}/onvif/PTZService",
-            f"{self.base_url}/onvif/ptz",
+        candidates = [
+            *self.PTZ_SERVICE_CANDIDATES,
+            *[f"{self.base_url}/onvif/{x}" for x in ["ptz_service", "PTZService", "ptz"]],
         ]
-        for url in fallback_urls:
-            try:
-                self._request(url, body, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities")
+        for cand in candidates:
+            url = cand if cand.startswith("http") else f"{self.base_url}{cand}"
+            r = self._get(url)
+            if r and r.status_code in (200, 401, 403, 405):
                 self.ptz_url = url
                 return url
-            except Exception:
-                continue
-        raise RuntimeError("Không tìm thấy ONVIF PTZ service trên camera.")
 
-    def get_profile_token(self):
-        ptz_url = self.ptz_url or self.discover_ptz_service()
-        # Query profiles on media service is required to find PTZ profile token
-        media_candidates = [
-            f"{self.base_url}/onvif/media_service",
-            f"{self.base_url}/onvif/MediaService",
-            f"{self.base_url}/onvif/media",
-        ]
+        # fallback: try device service GetCapabilities
+        self.device_url = self.device_url or self.discover_device_service()
+        if self.device_url:
+            body = '''
+            <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                           xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+              <soap:Body>
+                <tds:GetCapabilities>
+                  <tds:Category>PTZ</tds:Category>
+                </tds:GetCapabilities>
+              </soap:Body>
+            </soap:Envelope>
+            '''
+            resp = self._post_soap(self.device_url, body, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities")
+            if resp.status_code in (200, 401, 403, 405):
+                text = resp.text
+                if "PTZ" in text or "xaddr" in text.lower():
+                    # best effort: parse XAddr if present
+                    try:
+                        root = ET.fromstring(text)
+                        for elem in root.iter():
+                            if "PTZ" in elem.tag or "XAddr" in elem.tag:
+                                if elem.text and "http" in elem.text:
+                                    self.ptz_url = elem.text
+                                    return elem.text
+                    except Exception:
+                        pass
 
-        body = '''
-        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
-                       xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
-          <soap:Body>
-            <trt:GetProfiles/>
-          </soap:Body>
-        </soap:Envelope>
-        '''
-        for url in media_candidates:
-            try:
-                output = self._request(url, body, "http://www.onvif.org/ver10/media/wsdl/GetProfiles")
-                if "ProfileToken" in output:
-                    token = output.split("ProfileToken>")[-1].split("</")[0]
-                    if token:
-                        return token
-            except Exception:
-                continue
-        return "main_profile"
+        return self.ptz_url
+
+    def discover_profile_token(self):
+        if self.profile_token:
+            return self.profile_token
+
+        for media_path in self.MEDIA_SERVICE_CANDIDATES:
+            url = f"{self.base_url}{media_path}"
+            body = '''
+            <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                           xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+              <soap:Body>
+                <trt:GetProfiles/>
+              </soap:Body>
+            </soap:Envelope>
+            '''
+            resp = self._post_soap(url, body, "http://www.onvif.org/ver10/media/wsdl/GetProfiles")
+            if resp.status_code in (200, 401, 403, 405):
+                text = resp.text
+                # Try to parse ProfileToken from XML
+                try:
+                    root = ET.fromstring(text)
+                    for elem in root.iter():
+                        if elem.tag.endswith("ProfileToken") and elem.text:
+                            self.profile_token = elem.text
+                            return self.profile_token
+                except Exception:
+                    pass
+                if "ProfileToken" in text:
+                    try:
+                        value = text.split("ProfileToken>")[-1].split("</")[0]
+                        if value:
+                            self.profile_token = value
+                            return value
+                    except Exception:
+                        pass
+
+        self.profile_token = "main_profile"
+        return self.profile_token
 
     def move_relative(self, pan=0.0, tilt=0.0, zoom=0.0):
-        service_url = self.ptz_url or self.discover_ptz_service()
-        token = self.get_profile_token()
+        service_url = self.discover_ptz_service()
+        if not service_url:
+            raise RuntimeError("Không tìm thấy service PTZ qua ONVIF.")
+        token = self.discover_profile_token()
         body = f'''
         <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
                        xmlns:tt="http://www.onvif.org/ver10/schema"
@@ -147,21 +173,23 @@ class ONVIFPTZManager:
                 <tt:Zoom x="{zoom}" y="0" space="http://www.onvif.org/onvif/ptz/space/position"/>
               </tptz:Translation>
               <tptz:Speed>
-                <tt:PanTilt x="1" y="1" space="http://www.onvif.org/onvif/ptz/space/position"/>
-                <tt:Zoom x="1"/>
+                <tt:PanTilt x="1.0" y="1.0" space="http://www.onvif.org/onvif/ptz/space/position"/>
+                <tt:Zoom x="1.0"/>
               </tptz:Speed>
             </tptz:RelativeMove>
           </soap:Body>
         </soap:Envelope>
         '''
-        return self._request(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/RelativeMove")
+        resp = self._post_soap(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/RelativeMove")
+        return resp
 
     def stop(self):
-        service_url = self.ptz_url or self.discover_ptz_service()
-        token = self.get_profile_token()
+        service_url = self.discover_ptz_service()
+        if not service_url:
+            raise RuntimeError("Không tìm thấy service PTZ qua ONVIF.")
+        token = self.discover_profile_token()
         body = f'''
         <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
-                       xmlns:tt="http://www.onvif.org/ver10/schema"
                        xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
           <soap:Body>
             <tptz:Stop>
@@ -172,11 +200,13 @@ class ONVIFPTZManager:
           </soap:Body>
         </soap:Envelope>
         '''
-        return self._request(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/Stop")
+        return self._post_soap(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/Stop")
 
     def center(self):
-        service_url = self.ptz_url or self.discover_ptz_service()
-        token = self.get_profile_token()
+        service_url = self.discover_ptz_service()
+        if not service_url:
+            raise RuntimeError("Không tìm thấy service PTZ qua ONVIF.")
+        token = self.discover_profile_token()
         body = f'''
         <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
                        xmlns:tt="http://www.onvif.org/ver10/schema"
@@ -192,7 +222,7 @@ class ONVIFPTZManager:
           </soap:Body>
         </soap:Envelope>
         '''
-        return self._request(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/AbsoluteMove")
+        return self._post_soap(service_url, body, "http://www.onvif.org/ver20/ptz/wsdl/AbsoluteMove")
 
     def zoom(self, delta):
         self.move_relative(zoom=delta)
