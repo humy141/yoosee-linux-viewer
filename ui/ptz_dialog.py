@@ -6,6 +6,7 @@ class PTZDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Điều khiển PTZ")
         self.resize(320, 260)
+        self.ptz_manager = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Điều khiển góc nhìn"))
@@ -35,3 +36,6 @@ class PTZDialog(QDialog):
         btns.addStretch()
         btns.addWidget(ok_btn)
         layout.addLayout(btns)
+
+    def set_ptz_manager(self, manager):
+        self.ptz_manager = manager

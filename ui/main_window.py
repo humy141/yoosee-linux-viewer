@@ -1,17 +1,4 @@
-from PyQt5.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QMessageBox,
-    QSplitter,
-    QFrame,
-)
+from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QLabel, QTextEdit, QMessageBox, QSplitter, QFrame
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 import cv2
@@ -19,6 +6,7 @@ import cv2
 from app.camera_manager import CameraStore, CameraStreamThread
 from app.motion_detector import MotionDetector
 from app.recorder import Recorder
+from app.ptz_manager import ONVIFPTZManager
 from ui.camera_dialog import AddCameraDialog
 from ui.discovery_dialog import CameraDiscoveryDialog
 from ui.ptz_dialog import PTZDialog
@@ -176,11 +164,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Lỗi", "Vui lòng chọn camera trước.")
             return
         dialog = PTZDialog(self)
+        dialog.set_ptz_manager(
+            ONVIFPTZManager(
+                self.current_camera.get("ip"),
+                self.current_camera.get("username", "admin"),
+                self.current_camera.get("password", "admin"),
+                self.current_camera.get("port", 80),
+            )
+        )
         dialog.up_btn.clicked.connect(lambda: self.send_ptz_command("up"))
         dialog.down_btn.clicked.connect(lambda: self.send_ptz_command("down"))
         dialog.left_btn.clicked.connect(lambda: self.send_ptz_command("left"))
         dialog.right_btn.clicked.connect(lambda: self.send_ptz_command("right"))
-        dialog.center_btn.clicked.connect(lambda: self.send_ptz_command("home"))
+        dialog.center_btn.clicked.connect(lambda: self.send_ptz_command("center"))
         dialog.zoom_in_btn.clicked.connect(lambda: self.send_ptz_command("zoom_in"))
         dialog.zoom_out_btn.clicked.connect(lambda: self.send_ptz_command("zoom_out"))
         dialog.exec_()
@@ -188,8 +184,36 @@ class MainWindow(QMainWindow):
     def send_ptz_command(self, command):
         if self.current_camera is None:
             return
-        self.log_event(f"[PTZ] Gửi lệnh: {command} tới {self.current_camera['name']}")
-        self.status_label.setText(f"PTZ: {command}")
+
+        manager = ONVIFPTZManager(
+            self.current_camera.get("ip"),
+            self.current_camera.get("username", "admin"),
+            self.current_camera.get("password", "admin"),
+            self.current_camera.get("port", 80),
+        )
+
+        try:
+            if command == "up":
+                manager.move_relative(tilt=-0.20)
+            elif command == "down":
+                manager.move_relative(tilt=0.20)
+            elif command == "left":
+                manager.move_relative(pan=-0.20)
+            elif command == "right":
+                manager.move_relative(pan=0.20)
+            elif command == "center":
+                manager.center()
+            elif command == "zoom_in":
+                manager.zoom(0.20)
+            elif command == "zoom_out":
+                manager.zoom(-0.20)
+            else:
+                manager.stop()
+            self.log_event(f"[PTZ] Gửi lệnh: {command} tới {self.current_camera['name']}")
+            self.status_label.setText(f"PTZ: {command}")
+        except Exception as exc:
+            self.log_event(f"[PTZ] Lệnh {command} không thành công: {exc}")
+            self.status_label.setText(f"PTZ lỗi: {command}")
 
     def toggle_stream(self):
         if self.current_camera is None:
