@@ -1,44 +1,40 @@
-from PyQt5.QtWidgets import QDialog, QFormLayout, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+from PyQt5.QtWidgets import QMainWindow, QWidget, QFormLayout, QLineEdit, QPushButton, QVBoxLayout, QLabel, QMessageBox
+
+from ui.main_window import MainWindow
 
 
-class AddCameraDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Thêm camera")
-        self.resize(420, 220)
+class LoginWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Yoosee Linux - Đăng nhập")
+        self.resize(420, 250)
 
-        self.name_input = QLineEdit()
-        self.ip_input = QLineEdit()
-        self.port_input = QLineEdit("554")
-        self.username_input = QLineEdit("admin")
-        self.password_input = QLineEdit("admin")
-        self.password_input.setEchoMode(QLineEdit.Password)
+        container = QWidget(self)
+        self.setCentralWidget(container)
+        layout = QVBoxLayout(container)
+
+        title = QLabel("Yoosee Linux")
+        title.setStyleSheet("font-size: 22px; font-weight: bold;")
+        layout.addWidget(title)
 
         form = QFormLayout()
-        form.addRow("Tên camera", self.name_input)
-        form.addRow("IP", self.ip_input)
-        form.addRow("Port", self.port_input)
-        form.addRow("Username", self.username_input)
-        form.addRow("Password", self.password_input)
-
-        btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Lưu")
-        cancel_btn = QPushButton("Hủy")
-        save_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-
-        layout = QVBoxLayout(self)
+        self.user_input = QLineEdit("admin")
+        self.pass_input = QLineEdit("admin")
+        self.pass_input.setEchoMode(QLineEdit.Password)
+        form.addRow("Tài khoản", self.user_input)
+        form.addRow("Mật khẩu", self.pass_input)
         layout.addLayout(form)
-        layout.addLayout(btn_layout)
 
-    def values(self):
-        return {
-            "name": self.name_input.text().strip(),
-            "ip": self.ip_input.text().strip(),
-            "port": self.port_input.text().strip(),
-            "username": self.username_input.text().strip(),
-            "password": self.password_input.text().strip(),
-        }
+        btn = QPushButton("Đăng nhập")
+        btn.clicked.connect(self.login)
+        layout.addWidget(btn)
+
+    def login(self):
+        username = self.user_input.text().strip()
+        password = self.pass_input.text().strip()
+        if username and password:
+            self.close()
+            self.main = MainWindow(username)
+            self.main.show()
+        else:
+            QMessageBox.warning(self, "Lỗi", "Vui lòng nhập thông tin đăng nhập.")
