@@ -1,1 +1,274 @@
-#!/bin/bash\n\n# Setup Yoosee Linux Viewer - Debian 13 Full Environment Setup\n# Cài đặt đầy đủ tất cả dependencies cho Debian 13 (Trixie)\n# Usage: sudo bash setup-deb13.sh\n\nset -e\n\necho \"🔧 Yoosee Linux Viewer - Debian 13 Full Setup\"\necho \"=============================================\"\necho \"\"\necho \"Script này sẽ cài đặt:\"\necho \"  - Python 3.11+\"\necho \"  - PyQt5 (GUI)\"\necho \"  - OpenCV (video processing)\"\necho \"  - FFmpeg (video recording)\"\necho \"  - ONVIF/SOAP libraries\"\necho \"  - SQLite (camera database)\"\necho \"  - Networking tools\"\necho \"\"\n\n# Kiểm tra root\nif [ \"$EUID\" -ne 0 ]; then\n    echo \"❌ Script này cần chạy với quyền root (sudo)\"\n    exit 1\nfi\n\n# Kiểm tra Debian 13\nif ! grep -q \"trixie\\|13\" /etc/os-release; then\n    echo \"⚠️  Warning: OS hiện tại không phải Debian 13\"\n    echo \"Script vẫn cố gắng cài đặt...\"\nfi\n\necho \"📋 Step 1: Cập nhật package list\"\napt-get update\napt-get upgrade -y\n\necho \"\"\necho \"📦 Step 2: Cài đặt Python 3.11+ & development tools\"\napt-get install -y \\\n    python3 \\\n    python3-dev \\\n    python3-pip \\\n    python3-venv \\\n    python3-setuptools \\\n    python3-wheel \\\n    build-essential \\\n    cmake \\\n    git\n\necho \"Phiên bản Python: $(python3 --version)\"\necho \"Phiên bản pip: $(pip3 --version)\"\n\necho \"\"\necho \"📦 Step 3: Cài đặt X11 Display Server libraries\"\napt-get install -y \\\n    libx11-dev \\\n    libx11-6 \\\n    libxext-dev \\\n    libxext6 \\\n    libxrender-dev \\\n    libxrender1 \\\n    libxkbcommon-x11-0 \\\n    libdbus-1-3 \\\n    libfontconfig1 \\\n    libfontconfig1-dev\n\necho \"\"\necho \"📦 Step 4: Cài đặt OpenGL/Rendering libraries\"\napt-get install -y \\\n    libgl1-mesa-glx \\\n    libgl1-mesa-dev \\\n    libglib2.0-0 \\\n    libglib2.0-dev\n\necho \"\"\necho \"📦 Step 5: Cài đặt Qt5 libraries (PyQt5)\"\napt-get install -y \\\n    qtbase5-dev \\\n    libqt5gui5 \\\n    libqt5core5t64 \\\n    libqt5dbus5 \\\n    libqt5network5 \\\n    libqt5widgets5 \\\n    libqt5opengl5 \\\n    libqt5svg5 \\\n    libqt5concurrent5\n\necho \"\"\necho \"📦 Step 6: Cài đặt Image libraries (cho OpenCV)\"\napt-get install -y \\\n    libjpeg62-turbo \\\n    libjpeg62-turbo-dev \\\n    libpng16-16 \\\n    libpng-dev \\\n    libtiff6 \\\n    libtiff-dev \\\n    libwebp7 \\\n    libwebp-dev\n\necho \"\"\necho \"📦 Step 7: Cài đặt Video/Audio libraries (cho FFmpeg)\"\napt-get install -y \\\n    ffmpeg \\\n    libavcodec60 \\\n    libavcodec-extra \\\n    libavformat60 \\\n    libswscale7 \\\n    libavutil58 \\\n    libswresample4 \\\n    libavdevice60\n\necho \"\"\necho \"📦 Step 8: Cài đặt RTSP/Network libraries\"\napt-get install -y \\\n    libssl-dev \\\n    libssl3 \\\n    libcurl4-openssl-dev \\\n    libcurl4 \\\n    curl \\\n    wget\n\necho \"\"\necho \"📦 Step 9: Cài đặt SQLite (camera database)\"\napt-get install -y \\\n    sqlite3 \\\n    libsqlite3-dev\n\necho \"\"\necho \"📦 Step 10: Cài đặt Networking & System utilities\"\napt-get install -y \\\n    net-tools \\\n    iputils-ping \\\n    dnsutils \\\n    netcat-traditional \\\n    telnet\n\necho \"\"\necho \"📦 Step 11: Cài đặt encoding/compression libraries\"\napt-get install -y \\\n    libbz2-dev \\\n    zlib1g \\\n    zlib1g-dev\n\necho \"\"\necho \"📦 Step 12: Cài đặt system fonts (cho UI)\"\napt-get install -y \\\n    fonts-dejavu \\\n    fonts-dejavu-core \\\n    fontconfig\n\necho \"\"\necho \"🐍 Step 13: Cập nhật pip & setuptools\"\npip3 install --upgrade pip setuptools wheel\n\necho \"\"\necho \"📦 Step 14: Cài đặt Python packages cơ bản\"\npip3 install \\\n    PyQt5==5.15.9 \\\n    PyQt5-sip==12.13.0 \\\n    opencv-python==4.8.1.78 \\\n    numpy==1.24.3 \\\n    requests==2.31.0 \\\n    Pillow==10.0.0\n\necho \"\"\necho \"📦 Step 15: Cài đặt ONVIF libraries (cho PTZ v2 - optional)\"\npip3 install \\\n    zeep==4.2.1 \\\n    onvif-zeep==0.2.12 || echo \"⚠️  ONVIF packages có thể bị skip nếu lỗi\"\n\necho \"\"\necho \"📦 Step 16: Cài đặt Python development tools\"\npip3 install \\\n    ipython \\\n    jupyter \\\n    pytest\n\necho \"\"\necho \"📦 Step 17: Clean up cache\"\napt-get clean\napt-get autoremove -y\npip3 cache purge\n\necho \"\"\necho \"✅ Setup Debian 13 hoàn tất!\"\necho \"\"\necho \"📊 Kiểm tra cài đặt:\"\necho \"========================\"\n\necho \"\"\necho \"Python 3:\"\npython3 --version\n\necho \"\"\necho \"pip3:\"\npip3 --version\n\necho \"\"\necho \"Python libraries check:\"\npython3 << 'EOF'\nimport sys\nprint(\"📦 PyQt5:\", end=\" \")\ntry:\n    import PyQt5\n    print(f\"✓ {PyQt5.__version__}\")\nexcept ImportError as e:\n    print(f\"✗ {e}\")\n\nprint(\"📦 OpenCV:\", end=\" \")\ntry:\n    import cv2\n    print(f\"✓ {cv2.__version__}\")\nexcept ImportError as e:\n    print(f\"✗ {e}\")\n\nprint(\"📦 NumPy:\", end=\" \")\ntry:\n    import numpy\n    print(f\"✓ {numpy.__version__}\")\nexcept ImportError as e:\n    print(f\"✗ {e}\")\n\nprint(\"📦 Pillow:\", end=\" \")\ntry:\n    import PIL\n    print(f\"✓ {PIL.__version__}\")\nexcept ImportError as e:\n    print(f\"✗ {e}\")\n\nprint(\"📦 Requests:\", end=\" \")\ntry:\n    import requests\n    print(f\"✓ {requests.__version__}\")\nexcept ImportError as e:\n    print(f\"✗ {e}\")\n\nprint(\"📦 ONVIF/Zeep:\", end=\" \")\ntry:\n    import zeep\n    print(f\"✓ {zeep.__version__}\")\nexcept ImportError:\n    print(\"⚠️  Optional (PTZ v2)\")\nEOF\n\necho \"\"\necho \"FFmpeg:\"\nffmpeg -version | head -1\n\necho \"\"\necho \"SQLite3:\"\nsqlite3 --version\n\necho \"\"\necho \"🚀 Hướng dẫn chạy app:\"\necho \"=======================\"\necho \"1. Clone/download repo:\"\necho \"   git clone <repo-url>\"\necho \"   cd yoosee-linux-viewer\"\necho \"\"\necho \"2. (Optional) Tạo Python virtual environment:\"\necho \"   python3 -m venv venv\"\necho \"   source venv/bin/activate\"\necho \"\"\necho \"3. Chạy app:\"\necho \"   python3 main.py\"\necho \"\"\necho \"📝 Troubleshooting:\"\necho \"===================\"\necho \"- Nếu lỗi PyQt5/Display: export QT_QPA_PLATFORM=offscreen\"\necho \"- Nếu lỗi OpenCV: pip3 install --upgrade opencv-python\"\necho \"- Nếu lỗi RTSP: kiểm tra ffmpeg -version\"\necho \"- Nếu lỗi ONVIF: optional, chỉ cần cho PTZ v2\"\necho \"\"\necho \"✨ Setup hoàn tất. Enjoy! 🎉\"\n"
+#!/bin/bash
+
+# Setup Yoosee Linux Viewer - Debian 13 Full Environment Setup
+# Cài đặt đầy đủ tất cả dependencies cho Debian 13 (Trixie)
+# Usage: sudo bash setup-deb13.sh
+
+set -e
+
+echo "🔧 Yoosee Linux Viewer - Debian 13 Full Setup"
+echo "============================================="
+echo ""
+echo "Script này sẽ cài đặt:"
+echo "  - Python 3.11+"
+echo "  - PyQt5 (GUI)"
+echo "  - OpenCV (video processing)"
+echo "  - FFmpeg (video recording)"
+echo "  - ONVIF/SOAP libraries"
+echo "  - SQLite (camera database)"
+echo "  - Networking tools"
+echo ""
+
+# Kiểm tra root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ Script này cần chạy với quyền root (sudo)"
+    exit 1
+fi
+
+# Kiểm tra Debian 13
+if ! grep -q "trixie\|13" /etc/os-release; then
+    echo "⚠️  Warning: OS hiện tại không phải Debian 13"
+    echo "Script vẫn cố gắng cài đặt..."
+fi
+
+echo "📋 Step 1: Cập nhật package list"
+apt-get update
+apt-get upgrade -y
+
+echo ""
+echo "📦 Step 2: Cài đặt Python 3.11+ & development tools"
+apt-get install -y \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    python3-setuptools \
+    python3-wheel \
+    build-essential \
+    cmake \
+    git
+
+echo "Phiên bản Python: $(python3 --version)"
+echo "Phiên bản pip: $(pip3 --version)"
+
+echo ""
+echo "📦 Step 3: Cài đặt X11 Display Server libraries"
+apt-get install -y \
+    libx11-dev \
+    libx11-6 \
+    libxext-dev \
+    libxext6 \
+    libxrender-dev \
+    libxrender1 \
+    libxkbcommon-x11-0 \
+    libdbus-1-3 \
+    libfontconfig1 \
+    libfontconfig1-dev
+
+echo ""
+echo "📦 Step 4: Cài đặt OpenGL/Rendering libraries"
+apt-get install -y \
+    libgl1-mesa-glx \
+    libgl1-mesa-dev \
+    libglib2.0-0 \
+    libglib2.0-dev
+
+echo ""
+echo "📦 Step 5: Cài đặt Qt5 libraries (PyQt5)"
+apt-get install -y \
+    qtbase5-dev \
+    libqt5gui5 \
+    libqt5core5t64 \
+    libqt5dbus5 \
+    libqt5network5 \
+    libqt5widgets5 \
+    libqt5opengl5 \
+    libqt5svg5 \
+    libqt5concurrent5
+
+echo ""
+echo "📦 Step 6: Cài đặt Image libraries (cho OpenCV)"
+apt-get install -y \
+    libjpeg62-turbo \
+    libjpeg62-turbo-dev \
+    libpng16-16 \
+    libpng-dev \
+    libtiff6 \
+    libtiff-dev \
+    libwebp7 \
+    libwebp-dev
+
+echo ""
+echo "📦 Step 7: Cài đặt Video/Audio libraries (cho FFmpeg)"
+apt-get install -y \
+    ffmpeg \
+    libavcodec60 \
+    libavcodec-extra \
+    libavformat60 \
+    libswscale7 \
+    libavutil58 \
+    libswresample4 \
+    libavdevice60
+
+echo ""
+echo "📦 Step 8: Cài đặt RTSP/Network libraries"
+apt-get install -y \
+    libssl-dev \
+    libssl3 \
+    libcurl4-openssl-dev \
+    libcurl4 \
+    curl \
+    wget
+
+echo ""
+echo "📦 Step 9: Cài đặt SQLite (camera database)"
+apt-get install -y \
+    sqlite3 \
+    libsqlite3-dev
+
+echo ""
+echo "📦 Step 10: Cài đặt Networking & System utilities"
+apt-get install -y \
+    net-tools \
+    iputils-ping \
+    dnsutils \
+    netcat-traditional \
+    telnet
+
+echo ""
+echo "📦 Step 11: Cài đặt encoding/compression libraries"
+apt-get install -y \
+    libbz2-dev \
+    zlib1g \
+    zlib1g-dev
+
+echo ""
+echo "📦 Step 12: Cài đặt system fonts (cho UI)"
+apt-get install -y \
+    fonts-dejavu \
+    fonts-dejavu-core \
+    fontconfig
+
+echo ""
+echo "🐍 Step 13: Cập nhật pip & setuptools"
+pip3 install --upgrade pip setuptools wheel
+
+echo ""
+echo "📦 Step 14: Cài đặt Python packages cơ bản"
+pip3 install \
+    PyQt5==5.15.9 \
+    PyQt5-sip==12.13.0 \
+    opencv-python==4.8.1.78 \
+    numpy==1.24.3 \
+    requests==2.31.0 \
+    Pillow==10.0.0
+
+echo ""
+echo "📦 Step 15: Cài đặt ONVIF libraries (cho PTZ v2 - optional)"
+pip3 install \
+    zeep==4.2.1 \
+    onvif-zeep==0.2.12 || echo "⚠️  ONVIF packages có thể bị skip nếu lỗi"
+
+echo ""
+echo "📦 Step 16: Cài đặt Python development tools"
+pip3 install \
+    ipython \
+    jupyter \
+    pytest
+
+echo ""
+echo "📦 Step 17: Clean up cache"
+apt-get clean
+apt-get autoremove -y
+pip3 cache purge
+
+echo ""
+echo "✅ Setup Debian 13 hoàn tất!"
+echo ""
+echo "📊 Kiểm tra cài đặt:"
+echo "========================"
+echo ""
+echo "Python 3:"
+python3 --version
+
+echo ""
+echo "pip3:"
+pip3 --version
+
+echo ""
+echo "Python libraries check:"
+python3 << 'EOF'
+import sys
+print("📦 PyQt5:", end=" ")
+try:
+    import PyQt5
+    print(f"✓ {PyQt5.__version__}")
+except ImportError as e:
+    print(f"✗ {e}")
+
+print("📦 OpenCV:", end=" ")
+try:
+    import cv2
+    print(f"✓ {cv2.__version__}")
+except ImportError as e:
+    print(f"✗ {e}")
+
+print("📦 NumPy:", end=" ")
+try:
+    import numpy
+    print(f"✓ {numpy.__version__}")
+except ImportError as e:
+    print(f"✗ {e}")
+
+print("📦 Pillow:", end=" ")
+try:
+    import PIL
+    print(f"✓ {PIL.__version__}")
+except ImportError as e:
+    print(f"✗ {e}")
+
+print("📦 Requests:", end=" ")
+try:
+    import requests
+    print(f"✓ {requests.__version__}")
+except ImportError as e:
+    print(f"✗ {e}")
+
+print("📦 ONVIF/Zeep:", end=" ")
+try:
+    import zeep
+    print(f"✓ {zeep.__version__}")
+except ImportError:
+    print("⚠️  Optional (PTZ v2)")
+EOF
+
+echo ""
+echo "FFmpeg:"
+ffmpeg -version | head -1
+
+echo ""
+echo "SQLite3:"
+sqlite3 --version
+
+echo ""
+echo "🚀 Hướng dẫn chạy app:"
+echo "======================="
+echo "1. Clone/download repo:"
+echo "   git clone <repo-url>"
+echo "   cd yoosee-linux-viewer"
+echo ""
+echo "2. (Optional) Tạo Python virtual environment:"
+echo "   python3 -m venv venv"
+echo "   source venv/bin/activate"
+echo ""
+echo "3. Chạy app:"
+echo "   python3 main.py"
+echo ""
+echo "📝 Troubleshooting:"
+echo "==================="
+echo "- Nếu lỗi PyQt5/Display: export QT_QPA_PLATFORM=offscreen"
+echo "- Nếu lỗi OpenCV: pip3 install --upgrade opencv-python"
+echo "- Nếu lỗi RTSP: kiểm tra ffmpeg -version"
+echo "- Nếu lỗi ONVIF: optional, chỉ cần cho PTZ v2"
+echo ""
+echo "✨ Setup hoàn tất. Enjoy! 🎉"
