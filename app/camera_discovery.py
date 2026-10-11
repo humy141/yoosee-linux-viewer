@@ -8,20 +8,34 @@ from requests.auth import HTTPBasicAuth
 
 
 class CameraDiscovery:
-    """Tự động phát hiện camera trên mạng local"""
+    """Tự động phát hiện camera trên mạng local, tối ưu cho FNKVision SEA-U2"""
     
-    COMMON_PORTS = [554, 8554, 8080, 8000, 80, 443]
-    COMMON_PATHS = [
+    # Cấu hình cho FNKVision SEA-U2
+    FNKVISION_PORTS = [554, 8554, 8080, 8000, 80]  # Port RTSP và HTTP
+    FNKVISION_PATHS = [
+        # RTSP paths phổ biến cho FNKVision
         "/stream1",
         "/stream",
         "/live",
-        "/video",
-        "/stream1/unicast",
-        "/cam/realmonitor",
-        "/h264/ch1",
-        "/onvif/profile1/media/stream1",
+        "/live/ch0",
+        "/live/ch1",
+        "/onvif/stream1",
+        "/rtsp/stream1",
+        "/media/stream1",
+        # HTTP paths
+        "/api/stream",
+        "/cgi-bin/api/stream",
+        "/mjpeg/1",
+        "/mjpeg/ch1",
     ]
-    TIMEOUT = 2
+    
+    TIMEOUT = 3
+    FNKVISION_DEFAULT_CREDS = [
+        ("admin", "admin"),
+        ("admin", "12345"),
+        ("root", "admin"),
+        ("test", "test"),
+    ]
 
     @staticmethod
     def get_gateway() -> Optional[str]:
@@ -66,31 +80,95 @@ class CameraDiscovery:
             return False
 
     @staticmethod
-    def test_rtsp_url(url: str, username: str = "admin", password: str = "admin") -> bool:
+    def test_rtsp_url(url: str) -> bool:
         """Kiểm tra xem RTSP URL có hoạt động không"""
         try:
             cap = cv2.VideoCapture(url)
             if cap.isOpened():
+                ret, frame = cap.read()
                 cap.release()
-                return True
+                return ret
         except Exception:
             pass
         return False
 
     @staticmethod
-    def test_http_stream(ip: str, port: int, username: str = "admin", password: str = "admin") -> Optional[str]:
-        """Kiểm tra HTTP stream"""
+    def get_camera_info_http(ip: str, port: int, username: str, password: str) -> Optional[Dict]:
+        """Lấy thông tin camera qua HTTP API (cho FNKVision)"""
         try:
-            url = f"http://{ip}:{port}/"
-            response = requests.get(
-                url,
-                auth=HTTPBasicAuth(username, password),
-                timeout=CameraDiscovery.TIMEOUT
-            )
-            if response.status_code == 200:
-                return url
+            # Thử các endpoint phổ biến của FNKVision
+            endpoints = [
+                "/cgi-bin/api/apiStatus",
+                "/api/status",
+                "/cgi-bin/configManager.cgi?action=getConfig&name=SystemInfo",
+            ]
+            
+            for endpoint in endpoints:
+                url = f"http://{ip}:{port}{endpoint}"
+                response = requests.get(
+                    url,
+                    auth=HTTPBasicAuth(username, password),
+                    timeout=CameraDiscovery.TIMEOUT
+                )
+                if response.status_code == 200:
+                    return {
+                        "method": "HTTP",
+                        "endpoint": endpoint,
+                        "status_code": response.status_code
+                    }
         except Exception:
             pass
+        return None
+
+    @staticmethod
+    def discover_fnkvision_camera(
+        ip: str,
+        port: int,
+        username: str,
+        password: str,
+        callback=None
+    ) -> Optional[Dict]:
+        """Tìm kiếm camera FNKVision SEA-U2 với thông tin cụ thể"""
+        
+        if callback:
+            callback(f"Kiểm tra {ip}:{port}...")
+        
+        # Kiểm tra RTSP
+        for path in CameraDiscovery.FNKVISION_PATHS:
+            if "/" in path and path.startswith("/") and not "api" in path and not "mjpeg" in path:
+                rtsp_url = f"rtsp://{username}:{password}@{ip}:{port}{path}"
+                if CameraDiscovery.test_rtsp_url(rtsp_url):
+                    camera = {
+                        "ip": ip,
+                        "port": port,
+                        "username": username,
+                        "password": password,
+                        "rtsp_url": rtsp_url,
+                        "name": f"FNKVision {ip}",
+                        "type": "RTSP (FNKVision)",
+                        "model": "FNKVision SEA-U2"
+                    }
+                    if callback:
+                        callback(f"✓ Tìm thấy RTSP: {rtsp_url}")
+                    return camera
+        
+        # Kiểm tra HTTP
+        http_info = CameraDiscovery.get_camera_info_http(ip, port, username, password)
+        if http_info:
+            camera = {
+                "ip": ip,
+                "port": port,
+                "username": username,
+                "password": password,
+                "rtsp_url": f"http://{ip}:{port}",
+                "name": f"FNKVision {ip}",
+                "type": "HTTP (FNKVision)",
+                "model": "FNKVision SEA-U2"
+            }
+            if callback:
+                callback(f"✓ Tìm thấy HTTP: {camera['rtsp_url']}")
+            return camera
+        
         return None
 
     @staticmethod
@@ -99,7 +177,7 @@ class CameraDiscovery:
         password: str = "admin",
         callback=None
     ) -> List[Dict]:
-        """Tìm kiếm camera trên mạng local"""
+        """Tìm kiếm camera trên mạng local, ưu tiên FNKVision SEA-U2"""
         cameras = []
         gateway = CameraDiscovery.get_gateway()
         
@@ -109,50 +187,43 @@ class CameraDiscovery:
             return cameras
 
         if callback:
-            callback(f"Scanning mạng từ {gateway}...")
+            callback(f"Quét mạng từ {gateway}...")
+            callback(f"Sử dụng username: {username}")
 
         ip_range = CameraDiscovery.get_network_range(gateway)
+        total_ips = len(ip_range)
         
-        for ip in ip_range:
-            for port in CameraDiscovery.COMMON_PORTS:
+        for idx, ip in enumerate(ip_range):
+            if callback:
+                callback(f"[{idx+1}/{total_ips}] Kiểm tra {ip}...")
+            
+            # Thử các cổng RTSP/HTTP
+            for port in CameraDiscovery.FNKVISION_PORTS:
                 if CameraDiscovery.test_port(ip, port):
                     if callback:
-                        callback(f"Phát hiện cổng mở: {ip}:{port}")
+                        callback(f"  ✓ Cổng mở: {ip}:{port}")
                     
-                    # Thử RTSP
-                    if port == 554 or port == 8554:
-                        for path in CameraDiscovery.COMMON_PATHS:
-                            rtsp_url = f"rtsp://{username}:{password}@{ip}:{port}{path}"
-                            if CameraDiscovery.test_rtsp_url(rtsp_url):
-                                camera = {
-                                    "ip": ip,
-                                    "port": port,
-                                    "username": username,
-                                    "password": password,
-                                    "rtsp_url": rtsp_url,
-                                    "name": f"Camera {ip}",
-                                    "type": "RTSP"
-                                }
-                                cameras.append(camera)
-                                if callback:
-                                    callback(f"✓ Tìm thấy camera: {rtsp_url}")
-                                break
+                    # Thử các credential mặc định của FNKVision
+                    found = False
+                    for test_user, test_pass in CameraDiscovery.FNKVISION_DEFAULT_CREDS:
+                        camera = CameraDiscovery.discover_fnkvision_camera(
+                            ip, port, test_user, test_pass, callback
+                        )
+                        if camera:
+                            cameras.append(camera)
+                            found = True
+                            break
                     
-                    # Thử HTTP
-                    http_url = CameraDiscovery.test_http_stream(ip, port, username, password)
-                    if http_url:
-                        camera = {
-                            "ip": ip,
-                            "port": port,
-                            "username": username,
-                            "password": password,
-                            "rtsp_url": http_url,
-                            "name": f"Camera {ip}",
-                            "type": "HTTP"
-                        }
-                        cameras.append(camera)
-                        if callback:
-                            callback(f"✓ Tìm thấy camera: {http_url}")
+                    # Nếu không tìm thấy với credential mặc định, thử credential được cung cấp
+                    if not found and (username, password) not in CameraDiscovery.FNKVISION_DEFAULT_CREDS:
+                        camera = CameraDiscovery.discover_fnkvision_camera(
+                            ip, port, username, password, callback
+                        )
+                        if camera:
+                            cameras.append(camera)
+        
+        if callback:
+            callback(f"\nKết quả: Tìm thấy {len(cameras)} camera")
         
         return cameras
 
